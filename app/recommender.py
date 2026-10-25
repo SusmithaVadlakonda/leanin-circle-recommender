@@ -349,3 +349,111 @@ def score(circle: Circle, member: Member, circle_match: Match, as_of: datetime, 
     else:
         base = RELEVANCE_WEIGHT * circle_match.relevance + ACTIVITY_WEIGHT * activity
     return base * multiplier
+
+
+# ---------------------------------------------------------------------------
+# Diversity and the engine
+# ---------------------------------------------------------------------------
+
+DEFAULT_LIMIT = 5
+
+
+@dataclass(frozen=True)
+class Scored:
+    circle: Circle
+    score: float
+    match: Match
+    reach: str
+
+
+@dataclass(frozen=True)
+class Recommendation:
+    circle: Circle
+    score: float
+    match: Match
+    reach: str
+    similar: tuple[Circle, ...]  # near-duplicates folded under this result
+
+
+@dataclass(frozen=True)
+class Exclusion:
+    circle: Circle
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RecommendationSet:
+    member: Member
+    strategy: str
+    as_of: datetime
+    recommendations: tuple[Recommendation, ...]
+    excluded: tuple[Exclusion, ...]
+
+
+def _rank_key(item: Scored) -> tuple[float, int]:
+    return (-item.score, item.circle.id)
+
+
+def _group_key(circle: Circle) -> str:
+    """Circles sharing a primary topic are near-duplicates. A Circle without a topic stands alone."""
+    return circle.topic or f"circle:{circle.id}"
+
+
+def diversify(ranked: list[Scored], limit: int) -> list[Recommendation]:
+    """Keep the best Circle per topic group and attach the rest to it as similar Circles.
+
+    ranked must be sorted best first. When there are fewer groups than slots, the list
+    backfills from the attached Circles, so it's never shorter than it has to be.
+    """
+    groups: dict[str, list[Scored]] = {}
+    for item in ranked:
+        groups.setdefault(_group_key(item.circle), []).append(item)
+
+    picked = [members[0] for members in groups.values()][:limit]
+    if len(picked) < limit:
+        spares = sorted((s for members in groups.values() for s in members[1:]), key=_rank_key)
+        picked = sorted(picked + spares[: limit - len(picked)], key=_rank_key)
+
+    picked_ids = {s.circle.id for s in picked}
+    return [
+        Recommendation(
+            s.circle,
+            s.score,
+            s.match,
+            s.reach,
+            tuple(o.circle for o in groups[_group_key(s.circle)] if o.circle.id not in picked_ids),
+        )
+        for s in picked
+    ]
+
+
+class Recommender:
+    """Ranks Circles for a member against a catalog built once, as of a fixed time."""
+
+    def __init__(self, circles: list[Circle], topic_labels: dict[str, str], as_of: datetime):
+        self.circles = tuple(sorted(circles, key=lambda c: c.id))
+        self.circles_by_id = {c.id: c for c in self.circles}
+        self.topic_labels = dict(topic_labels)
+        self.as_of = as_of
+
+    def recommend(self, member: Member, limit: int = DEFAULT_LIMIT) -> RecommendationSet:
+        profile = build_profile(member, self.circles_by_id)
+        strategy = strategy_for(member, profile)
+        ranked: list[Scored] = []
+        excluded: list[Exclusion] = []
+        for circle in self.circles:
+            reasons = exclusion_reasons(circle, member, self.as_of)
+            if reasons:
+                excluded.append(Exclusion(circle, tuple(reasons)))
+                continue
+            circle_match = match(circle, profile)
+            circle_score = score(circle, member, circle_match, self.as_of, strategy)
+            ranked.append(Scored(circle, circle_score, circle_match, reach(circle, member)))
+        ranked.sort(key=_rank_key)
+        return RecommendationSet(
+            member=member,
+            strategy=strategy,
+            as_of=self.as_of,
+            recommendations=tuple(diversify(ranked, limit)),
+            excluded=tuple(excluded),
+        )

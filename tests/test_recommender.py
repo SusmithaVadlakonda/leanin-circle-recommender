@@ -10,6 +10,7 @@ from factories import SNAPSHOT, make_circle, make_member
 from app import models
 from app.recommender import (
     Circle,
+    Recommender,
     activity_score,
     build_profile,
     city_of,
@@ -18,6 +19,7 @@ from app.recommender import (
     score,
     strategy_for,
 )
+from app.service import load_member, load_recommender
 
 
 def _score(circle, member, as_of=SNAPSHOT):
@@ -141,3 +143,75 @@ def test_r6_spots_left_do_not_change_the_score(capacity):
     member = make_member(topic_interests=["negotiation"])
     roomy = make_circle(member_count=10, max_members=None)
     assert _score(make_circle(member_count=10, max_members=capacity), member) == _score(roomy, member)
+
+
+# ---- diversity and cold start ---------------------------------------------------
+
+
+def _recommend(circles, member, limit=5):
+    return Recommender(circles, {}, SNAPSHOT).recommend(member, limit=limit)
+
+
+def _ids(result):
+    return [r.circle.id for r in result.recommendations]
+
+
+def test_r7_same_topic_circles_collapse_into_one_result():
+    member = make_member(topic_interests=["negotiation", "confidence"])
+    circles = [
+        make_circle(id=10, topic="negotiation", feed_posts_30d=9),
+        make_circle(id=11, topic="negotiation", feed_posts_30d=12),
+        make_circle(id=12, topic="negotiation", feed_posts_30d=10),
+        make_circle(id=13, topic="confidence"),
+        make_circle(id=14, topic="networking"),
+    ]
+    # Three topic groups for three slots, so no backfill: grouping alone decides the list.
+    result = _recommend(circles, member, limit=3)
+    assert _ids(result) == [11, 13, 14]
+    assert [c.id for c in result.recommendations[0].similar] == [12, 10]
+
+
+def test_r7_backfills_when_there_are_fewer_topics_than_slots():
+    member = make_member(topic_interests=["negotiation"])
+    circles = [make_circle(id=i, topic="negotiation", feed_posts_30d=i) for i in (1, 2, 3)]
+    result = _recommend(circles, member, limit=5)
+    assert _ids(result) == [3, 2, 1]
+    assert all(r.similar == () for r in result.recommendations)
+
+
+def test_r7_circles_without_a_topic_never_group():
+    result = _recommend([make_circle(id=1, topic=None), make_circle(id=2, topic=None)], make_member())
+    assert sorted(_ids(result)) == [1, 2]
+
+
+def test_r8_cold_start_prefers_open_circles_on_distinct_topics():
+    member = make_member()
+    circles = [
+        make_circle(id=1, topic="negotiation", join_policy="request"),
+        make_circle(id=2, topic="confidence", join_policy="open"),
+        make_circle(id=3, topic="confidence", join_policy="open"),
+        make_circle(id=4, topic="networking", join_policy="open"),
+    ]
+    result = _recommend(circles, member, limit=3)
+    assert result.strategy == "cold_start"
+    assert _ids(result) == [2, 4, 1]
+    topics = [r.circle.topic for r in result.recommendations]
+    assert len(set(topics)) == len(topics)
+
+
+def test_r9_unmatched_interests_still_fill_the_list_and_ties_break_by_id():
+    member = make_member(topic_interests=["allyship"])
+    circles = [make_circle(id=i, topic=topic) for i, topic in ((5, "negotiation"), (3, "confidence"), (4, "networking"))]
+    result = _recommend(circles, member)
+    assert _ids(result) == [3, 4, 5]
+    assert all(r.match.interest is None for r in result.recommendations)
+    assert _ids(_recommend(circles, member)) == _ids(result)
+
+
+def test_engine_on_the_seeded_data_excludes_and_explains_nothing_it_shouldnt(db_path):
+    engine = load_recommender(db_path)
+    result = engine.recommend(load_member(23, db_path))
+    excluded = {e.circle.id: e.reasons for e in result.excluded}
+    assert excluded[20] == ("full",) and excluded[21] == ("unlisted", "inactive")
+    assert excluded[23] == ("already_member",)
+    assert load_member(999, db_path) is None
