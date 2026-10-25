@@ -8,6 +8,7 @@ Decisions made while building the recommender, with the evidence behind each. [p
 | 2 | Filler results get their own explanation, separate from cold start. |
 | 3 | The "most active" claim needs a high activity score. |
 | 4 | Sentences without an interest match name the Circle's topic. |
+| 5 | Keep httpx for the test client, and filter one deprecation warning. |
 
 ---
 
@@ -42,3 +43,12 @@ Decisions made while building the recommender, with the evidence behind each. [p
 **Evidence.** Reading user 42's list as a member, all five results opened with the same sentence, so the list read like a form letter and said nothing about each Circle.
 
 **Decision.** These sentences now end with the Circle's topic, as in "One of the most active Circles right now, focused on Negotiation." A Circle with no topic keeps the shorter sentence.
+
+### 5. Keep httpx for the test client, and filter one deprecation warning
+
+**Context.** The requirements name httpx, which FastAPI's test client uses.
+
+**Evidence.** Starlette 1.9 warns that using httpx with its test client is deprecated and suggests a package called httpx2. Every test passes with httpx.
+
+**Decision.** Keep httpx and filter that one warning in pytest.ini, with a comment pointing here. Switching packages is worth revisiting at the next dependency upgrade, once the replacement can be evaluated.
+

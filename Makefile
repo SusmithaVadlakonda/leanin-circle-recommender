@@ -10,7 +10,7 @@ PY     := $(VENV)/bin/python
 STAMP  := $(VENV)/.installed
 PORT   ?= 8000
 
-.PHONY: help setup seed test clean
+.PHONY: help setup seed run test clean
 
 help: ## List the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  make %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -25,6 +25,9 @@ setup: $(STAMP) ## Create .venv and install the pinned dependencies (Python 3.11
 
 seed: $(STAMP) ## Rebuild circles.db from data/
 	$(PY) -m app.seed
+
+run: $(STAMP) ## Start the API on port 8000 (or PORT=...), with docs at /docs
+	$(PY) -m uvicorn app.main:app --host 127.0.0.1 --port $(PORT)
 
 test: $(STAMP) ## Run the whole test suite
 	$(PY) -m pytest
