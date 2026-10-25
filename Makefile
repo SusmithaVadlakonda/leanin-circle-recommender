@@ -10,7 +10,7 @@ PY     := $(VENV)/bin/python
 STAMP  := $(VENV)/.installed
 PORT   ?= 8000
 
-.PHONY: help setup seed run test clean
+.PHONY: help setup seed run test scenarios report golden smoke bench verify fresh-check clean
 
 help: ## List the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  make %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -31,6 +31,26 @@ run: $(STAMP) ## Start the API on port 8000 (or PORT=...), with docs at /docs
 
 test: $(STAMP) ## Run the whole test suite
 	$(PY) -m pytest
+
+scenarios: $(STAMP) ## Print the four planted scenarios as markdown
+	$(PY) -m scripts.scenarios
+
+report: $(STAMP) ## Write every user's recommendations to reports/ for a manual read
+	$(PY) -m scripts.scenarios --report
+
+golden: $(STAMP) ## Accept the current planted results as the new golden snapshot
+	$(PY) -m scripts.scenarios --update-golden
+
+smoke: $(STAMP) ## Start the real server, check key endpoints, then stop it
+	$(PY) -m scripts.smoke
+
+bench: $(STAMP) ## Print p50 and p95 latency over all users; fails above 50 ms
+	$(PY) -m scripts.benchmark
+
+verify: test smoke bench ## The commit check: tests, a live smoke test and the benchmark
+
+fresh-check: ## Clone the committed repo into a temp folder and run setup, test and smoke there
+	bash scripts/fresh_check.sh
 
 clean: ## Remove .venv, circles.db, reports and caches
 	rm -rf $(VENV) circles.db reports .pytest_cache
