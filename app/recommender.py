@@ -234,3 +234,118 @@ def strategy_for(member: Member, profile: dict[str, Interest]) -> str:
     if member.topic_interests:
         return PERSONALIZED
     return INFERRED if profile else COLD_START
+
+
+# ---------------------------------------------------------------------------
+# Eligibility gates: Circles the member can't be offered
+# ---------------------------------------------------------------------------
+
+INACTIVE_AFTER_DAYS = 60
+
+
+def exclusion_reasons(circle: Circle, member: Member, as_of: datetime) -> list[str]:
+    """Every reason this Circle can't be recommended to this member. Empty means eligible."""
+    reasons = []
+    if circle.id in member.circle_ids:
+        reasons.append("already_member")
+    if circle.access != "public":
+        reasons.append(circle.access)
+    if circle.is_full:
+        reasons.append("full")
+    if circle.idle_days(as_of) >= INACTIVE_AFTER_DAYS:
+        reasons.append("inactive")
+    return reasons
+
+
+# ---------------------------------------------------------------------------
+# Scoring: relevance and activity, scaled by whether the member can attend
+# ---------------------------------------------------------------------------
+
+TAG_MATCH_FACTOR = 0.5  # a tag-only match counts half as much as a topic match
+EXTRA_MATCH_BONUS = 0.1  # per additional interest the Circle also covers
+
+RECENCY_DAYS = 14
+POSTS_CAP, CHAT_CAP = 12, 100  # 30-day volume that earns full credit
+ENGAGEMENT_CAP = 15  # reactions plus comments per post
+POSTERS_CAP = 8  # distinct members posting in 30 days
+LEADER_DOMINANCE = 0.8  # above this share of posts, the Circle is a broadcast
+
+REACH_MULTIPLIERS = {
+    "in_person_near": 1.15,
+    "hybrid_near": 1.10,
+    "virtual": 1.00,
+    "hybrid": 1.00,
+    "in_person_unknown": 0.80,
+    "in_person_far": 0.40,
+}
+
+RELEVANCE_WEIGHT, ACTIVITY_WEIGHT = 0.6, 0.4
+COLD_ACTIVITY_WEIGHT, COLD_OPEN_WEIGHT = 0.85, 0.15
+
+
+@dataclass(frozen=True)
+class Match:
+    """How a Circle relates to the member's interests."""
+
+    relevance: float
+    interest: Interest | None  # the strongest matching interest
+    via_tag: bool  # True when that interest matched a tag rather than the topic
+    matched: tuple[Interest, ...]  # every matching interest, strongest first
+
+
+NO_MATCH = Match(0.0, None, False, ())
+
+
+def match(circle: Circle, profile: dict[str, Interest]) -> Match:
+    hits = []
+    for interest in profile.values():
+        if circle.topic == interest.topic:
+            hits.append((interest.weight, False, interest))
+        elif interest.topic in circle.tags:
+            hits.append((interest.weight * TAG_MATCH_FACTOR, True, interest))
+    if not hits:
+        return NO_MATCH
+    hits.sort(key=lambda h: (-h[0], h[1], h[2].topic))
+    best_value, via_tag, best = hits[0]
+    relevance = min(1.0, best_value + EXTRA_MATCH_BONUS * (len(hits) - 1))
+    return Match(relevance, best, via_tag, tuple(h[2] for h in hits))
+
+
+def activity_score(circle: Circle, as_of: datetime) -> float:
+    """A 0-1 measure of a living community: four equal parts.
+
+    Recency, volume of posts and chat, engagement per post, and how many
+    different members post. A Circle whose leader writes nearly everything
+    gets half credit for participation.
+    """
+    recency = math.exp(-circle.idle_days(as_of) / RECENCY_DAYS)
+    volume = 0.6 * min(circle.feed_posts_30d / POSTS_CAP, 1) + 0.4 * min(circle.chat_messages_30d / CHAT_CAP, 1)
+    engagement = min(circle.engagement_per_post / ENGAGEMENT_CAP, 1)
+    participation = min(circle.authors_30d / POSTERS_CAP, 1)
+    if circle.leader_share > LEADER_DOMINANCE:
+        participation *= 0.5
+    return (recency + volume + engagement + participation) / 4
+
+
+def reach(circle: Circle, member: Member) -> str:
+    """How easily the member can attend, using the leader's city as the Circle's location."""
+    near = member.city is not None and circle.leader_city == member.city
+    if circle.format == "virtual":
+        return "virtual"
+    if circle.format == "hybrid":
+        return "hybrid_near" if near else "hybrid"
+    if near:
+        return "in_person_near"
+    if member.city is None or circle.leader_city is None:
+        return "in_person_unknown"
+    return "in_person_far"
+
+
+def score(circle: Circle, member: Member, circle_match: Match, as_of: datetime, strategy: str) -> float:
+    multiplier = REACH_MULTIPLIERS[reach(circle, member)]
+    activity = activity_score(circle, as_of)
+    if strategy == COLD_START:
+        base = COLD_ACTIVITY_WEIGHT * activity + COLD_OPEN_WEIGHT * (circle.join_policy == "open")
+    else:
+        base = RELEVANCE_WEIGHT * circle_match.relevance + ACTIVITY_WEIGHT * activity
+    return base * multiplier
