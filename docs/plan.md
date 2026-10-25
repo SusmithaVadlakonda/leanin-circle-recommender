@@ -141,8 +141,11 @@ Each result gets three sentences, one per slot, in at most 200 characters.
 | interest_tag | A tag matches a stated interest, but the topic doesn't | Also covers {topic}, one of your interests. |
 | bio_match | The match came from the bio | Fits what you wrote in your bio about {topic}. |
 | circle_match | The match came from a Circle the member is in | Similar focus to {circle}, a Circle you're in. |
-| popular | No match, at cold start | One of the most active Circles right now. |
-| explore | No match, in a filler slot for a member with interests | A change of pace from the topics in your profile. |
+| popular | No match, at cold start, activity score 0.7 or higher | One of the most active Circles right now, focused on {topic}. |
+| starter | No match, at cold start, lower activity | A good place to start exploring Circles, focused on {topic}. |
+| explore | No match, in a filler slot for a member with interests | A change of pace from your profile's topics, focused on {topic}. |
+
+For a Circle with no topic, the last three drop the "focused on" clause.
 
 **Slot 2: why it's active.** The first row that applies wins.
 
@@ -177,7 +180,7 @@ Each result gets three sentences, one per slot, in at most 200 characters.
 - User 7, #5: "Focused on Leadership skills, one of your interests. 8 members posted in the last 30 days. Led from Seattle, WA, close to you."
 - User 7, #6: "Covers Public speaking and Leadership skills, both on your list. 5 members posted in the last 30 days. Meets in person."
 - User 23, #22: "Focused on Getting promoted, one of your interests. 5 members posted in the last 30 days. Request to join; the leader approves new members."
-- User 42, #11: "One of the most active Circles right now. 8 members posted in the last 30 days. Hybrid, so you can join online."
+- User 42, #11: "One of the most active Circles right now, focused on Negotiation. 8 members posted in the last 30 days. Hybrid, so you can join online."
 
 **Copy rules**
 - Topic labels, never slugs.
@@ -506,7 +509,7 @@ Shared fixtures: a seeded database in a temporary folder, a test client pointed 
 
 **Explanations**, in test_explain.py
 - X1: Each result has exactly three sentences, one per slot, in 200 characters or fewer.
-- X2: Each fit source produces its own template: one stated topic, several stated interests, a tag, the bio, a membership, popular or explore.
+- X2: Each fit source produces its own template: one stated topic, several stated interests, a tag, the bio, a membership, popular, starter or explore.
 - X3: Topic labels appear instead of slugs, and every number equals the underlying data.
 - X4: A request-to-join Circle always says so.
 - X5: The copy never mentions scores, weights or the algorithm, and never quotes posts or bios.
