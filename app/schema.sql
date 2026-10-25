@@ -64,14 +64,22 @@ CREATE TABLE IF NOT EXISTS user_topics (
     PRIMARY KEY (user_id, topic_slug)
 );
 
+-- Tags are free-form per the dataset README, so tag_slug has no foreign key to topics.
+-- Seeding trims, lowercases and deduplicates them.
 CREATE TABLE IF NOT EXISTS circle_tags (
     circle_id  INTEGER NOT NULL REFERENCES circles (id) ON DELETE CASCADE,
-    tag_slug   TEXT NOT NULL REFERENCES topics (slug),
+    tag_slug   TEXT NOT NULL,
     PRIMARY KEY (circle_id, tag_slug)
 );
 
-CREATE INDEX IF NOT EXISTS idx_memberships_user_id   ON memberships (user_id);
+-- Lookups by user_id on memberships, user_topics and circle_tags by circle_id are served by
+-- each table's composite primary key, whose index is sorted by its first column.
+-- The indexes below cover the lookups the primary keys can't.
+
+-- Members of a Circle, including its leader.
 CREATE INDEX IF NOT EXISTS idx_memberships_circle_id ON memberships (circle_id);
+-- A Circle's posts in a time window: the 30-day activity features.
 CREATE INDEX IF NOT EXISTS idx_activity_circle_time  ON activity (circle_id, created_at);
+-- Circles on a topic, and Circles carrying a tag: candidate lookup by interest.
 CREATE INDEX IF NOT EXISTS idx_circles_topic         ON circles (topic);
 CREATE INDEX IF NOT EXISTS idx_circle_tags_tag_slug  ON circle_tags (tag_slug);

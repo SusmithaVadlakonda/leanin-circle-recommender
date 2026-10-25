@@ -17,13 +17,17 @@ DEFAULT_DB_PATH = PROJECT_ROOT / "circles.db"
 TABLES = ["topics", "users", "user_topics", "circles", "circle_tags", "memberships", "activity"]
 
 
-def _load(name: str) -> list[dict]:
-    return json.loads((DATA_DIR / f"{name}.json").read_text(encoding="utf-8"))
+def _load(data_dir: Path, name: str) -> list[dict]:
+    return json.loads((data_dir / f"{name}.json").read_text(encoding="utf-8"))
 
 
-def _unique(items: list[str]) -> list[str]:
-    """Drop repeated values while keeping the original order."""
-    return list(dict.fromkeys(items))
+def normalize_slugs(values: list[str | None] | None) -> list[str]:
+    """Trim, lowercase and deduplicate slugs, keeping their first-seen order.
+
+    Tags are free-form, so " Negotiation " and "negotiation" are the same tag.
+    """
+    cleaned = (v.strip().lower() for v in (values or []) if v and v.strip())
+    return list(dict.fromkeys(cleaned))
 
 
 def _reset(db_path: Path) -> None:
@@ -32,20 +36,21 @@ def _reset(db_path: Path) -> None:
         Path(f"{db_path}{suffix}").unlink(missing_ok=True)
 
 
-def seed_db(db_path: str | Path = DEFAULT_DB_PATH) -> dict[str, int]:
-    """Recreate the database at db_path from data/*.json.
+def seed_db(db_path: str | Path = DEFAULT_DB_PATH, data_dir: str | Path = DATA_DIR) -> dict[str, int]:
+    """Recreate the database at db_path from the JSON files in data_dir.
 
     Returns the row count of every table.
     """
     db_path = Path(db_path)
+    data_dir = Path(data_dir)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     _reset(db_path)
 
-    topics = _load("topics")
-    users = _load("users")
-    circles = _load("circles")
-    memberships = _load("memberships")
-    activity = _load("activity")
+    topics = _load(data_dir, "topics")
+    users = _load(data_dir, "users")
+    circles = _load(data_dir, "circles")
+    memberships = _load(data_dir, "memberships")
+    activity = _load(data_dir, "activity")
 
     conn = sqlite3.connect(db_path)
     try:
@@ -67,7 +72,7 @@ def seed_db(db_path: str | Path = DEFAULT_DB_PATH) -> dict[str, int]:
             )
             conn.executemany(
                 "INSERT OR IGNORE INTO user_topics (user_id, topic_slug) VALUES (?, ?)",
-                [(u["id"], slug) for u in users for slug in _unique(u["topic_interests"] or [])],
+                [(u["id"], slug) for u in users for slug in normalize_slugs(u["topic_interests"])],
             )
 
             conn.executemany(
@@ -81,7 +86,7 @@ def seed_db(db_path: str | Path = DEFAULT_DB_PATH) -> dict[str, int]:
             )
             conn.executemany(
                 "INSERT OR IGNORE INTO circle_tags (circle_id, tag_slug) VALUES (?, ?)",
-                [(c["id"], slug) for c in circles for slug in _unique(c["tags"] or [])],
+                [(c["id"], slug) for c in circles for slug in normalize_slugs(c["tags"])],
             )
 
             conn.executemany(
