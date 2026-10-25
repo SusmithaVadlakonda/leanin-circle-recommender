@@ -31,10 +31,14 @@ def test_s2_near_duplicates_collapse_into_one_result(engine, members):
     assert {c.id for c in listed[0].similar} == {10, 11, 12} - {listed[0].circle.id}
 
 
-def test_s3_full_and_inactive_circles_never_rank(engine, members):
-    ids = _ids(engine, members, 23)
+def test_s3_full_and_inactive_circles_are_never_offered(engine, members):
+    result = engine.recommend(members[23])
+    ids = [r.circle.id for r in result.recommendations]
+    offered = set(ids) | {c.id for r in result.recommendations for c in r.similar}
     assert ids[0] == 22
-    assert not {20, 21} & set(ids)
+    # Neither listed nor shown as a similar Circle: #20 shares #22's topic, so grouping
+    # alone would fold it under #22 if the full gate ever stopped working.
+    assert not {20, 21} & offered
 
 
 def test_s4_cold_start_offers_open_active_circles_on_five_topics(engine, members):

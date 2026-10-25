@@ -17,12 +17,14 @@ def results(engine, members):
 @pytest.mark.parametrize("user_id", USERS)
 def test_i1_never_a_circle_the_member_cannot_join(results, members, engine, user_id):
     member = members[user_id]
-    for rec in results[user_id].recommendations:
-        assert rec.circle.id not in member.circle_ids
-        assert rec.circle.access == "public"
-        assert not rec.circle.is_full
-        assert rec.circle.idle_days(engine.as_of) < INACTIVE_AFTER_DAYS
-        assert exclusion_reasons(rec.circle, member, engine.as_of) == []
+    # Similar Circles are offered to the member too, so they must pass the same gates.
+    offered = [c for rec in results[user_id].recommendations for c in (rec.circle, *rec.similar)]
+    for circle in offered:
+        assert circle.id not in member.circle_ids
+        assert circle.access == "public"
+        assert not circle.is_full
+        assert circle.idle_days(engine.as_of) < INACTIVE_AFTER_DAYS
+        assert exclusion_reasons(circle, member, engine.as_of) == []
 
 
 @pytest.mark.parametrize("user_id", USERS)
