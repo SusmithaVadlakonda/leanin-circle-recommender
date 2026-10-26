@@ -10,7 +10,7 @@ PY     := $(VENV)/bin/python
 STAMP  := $(VENV)/.installed
 PORT   ?= 8000
 
-.PHONY: help setup seed run test scenarios report golden smoke bench verify fresh-check clean
+.PHONY: help setup seed run test scenarios docs report golden smoke bench verify fresh-check clean
 
 help: ## List the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  make %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -35,6 +35,9 @@ test: $(STAMP) ## Run the whole test suite
 scenarios: $(STAMP) ## Print the four planted scenarios as markdown
 	$(PY) -m scripts.scenarios
 
+docs: $(STAMP) ## Rewrite the README's scenario results from the current code
+	$(PY) -m scripts.scenarios --readme
+
 report: $(STAMP) ## Write every user's recommendations to reports/ for a manual read
 	$(PY) -m scripts.scenarios --report
 
@@ -47,7 +50,8 @@ smoke: $(STAMP) ## Start the real server, check key endpoints, then stop it
 bench: $(STAMP) ## Print p50 and p95 latency over all users; fails above 50 ms
 	$(PY) -m scripts.benchmark
 
-verify: test smoke bench ## The commit check: tests, a live smoke test and the benchmark
+verify: test smoke bench ## The commit check: tests, a live smoke test, the benchmark and the README check
+	$(PY) -m scripts.scenarios --check-readme
 
 fresh-check: ## Clone the committed repo into a temp folder and run setup, test and smoke there
 	bash scripts/fresh_check.sh

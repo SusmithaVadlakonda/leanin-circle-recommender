@@ -1,10 +1,10 @@
 # Implementation plan: Lean In Circle recommender
 
-**Status, 2026-10-24.** Committed: project setup, dataset notes, the SQLite schema and the seed script. Written but not committed: the data access layer, the inspection script, this plan and the decision log. Still to build: the recommender, the API, the Makefile, tests and docs.
+**Status, 2026-10-24.** Built and verified: everything in sections 2 to 8. What remains is the submission in section 9.
 
 **Decisions.** [decision-log.md](decision-log.md) records decisions made during implementation, with the evidence behind each.
 
-**Validated.** A throwaway prototype of the ranking passes all four planted scenarios. All 100 users get five results on five different topics, and none breaks a rule. Ranking takes 0.07 ms per user.
+**Validated.** A throwaway prototype of the ranking passed all four planted scenarios before any code was written. The implementation reproduces the prototype's top five for all four planted users, and all 100 users get five results on five different topics.
 
 **Budget.** The assignment asks for 3 to 4 hours at most. The remaining work is estimated at about 3 hours 20 minutes, including verification. If that would take the total past 4 hours, section 3 lists what to cut first.
 
@@ -228,6 +228,7 @@ For a Circle with no topic, the last three drop the "focused on" clause.
 ### API contract
 
 ```
+GET /                                    -> redirects to /docs
 GET /health                              -> {"status": "ok"}
 GET /users/{user_id}/recommendations
       ?limit=5                           1 to 20, otherwise 422
@@ -313,6 +314,8 @@ Commits go straight to main. Each one is small and leaves the tests passing. Fro
 
 The estimates add up to about 3 hours 20 minutes, including running the verification loop on every commit. The prototype already contains the ranking logic, which shortens commits 7 to 9.
 
+**As built.** Two small departures from the table. Commit 4 also carries the first seed test, so CI is green from its first run. An extra commit after 12 tightened two tests, after the break-it-on-purpose check found a gap.
+
 **Cut list, in order, if time runs short**
 1. The benchmark script. Keep the timing test.
 2. The Python 3.11 CI job. Keep 3.12, and state the tested version in the README.
@@ -331,9 +334,11 @@ app/
   config.py        database path and snapshot-time override
   recommender.py   interest profile, gates, scoring, diversity, cold start
   explain.py       reason codes, templates, explainer interface
+  service.py       loads the recommender and members from the database
   models.py        all SQL
   seed.py          JSON to SQLite
   schema.sql       tables and indexes
+  timestamps.py    the data's timestamp format
 scripts/
   inspect_data.py  dataset and review checks
   scenarios.py     prints scenarios; writes the README block, the report and the golden file
@@ -430,6 +435,7 @@ Verification runs at three levels. Each level is a make target, and CI runs the 
 
 | Request | Expected |
 |---|---|
+| The root URL | A redirect to /docs |
 | Health check | 200 |
 | User 7's recommendations | 200, with #5 and #6 first |
 | User 15's recommendations | At most one of #10, #11 and #12 |
