@@ -5,6 +5,7 @@ Run it with `make run`, or `uvicorn app.main:app`. Interactive docs are at /docs
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 
 from app.config import Settings
 from app.explain import Explained, Explainer, TemplateExplainer, explain, nudge
@@ -43,6 +44,11 @@ def create_app(settings: Settings | None = None, explainer: Explainer | None = N
         summary="Recommends relevant, active Lean In Circles, with a short reason for each.",
         lifespan=lifespan,
     )
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        """The address uvicorn prints at startup. Send whoever opens it to the interactive docs."""
+        return RedirectResponse(url="/docs")
 
     @app.get("/health", response_model=HealthOut, tags=["meta"])
     def health() -> HealthOut:

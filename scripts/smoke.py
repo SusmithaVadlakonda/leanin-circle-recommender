@@ -24,6 +24,11 @@ def _ids(response) -> list[int]:
 
 
 CHECKS = [
+    (
+        "The root URL redirects to the docs",
+        "/",
+        lambda r: r.status_code == 307 and r.headers.get("location") == "/docs",
+    ),
     ("Health check returns 200", "/health", lambda r: r.status_code == 200 and r.json() == {"status": "ok"}),
     ("User 7 gets #5 and #6 first", "/users/7/recommendations", lambda r: _ids(r)[:2] == [5, 6]),
     (

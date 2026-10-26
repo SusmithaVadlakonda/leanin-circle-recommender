@@ -9,6 +9,7 @@ Decisions made while building the recommender, with the evidence behind each. [p
 | 3 | The "most active" claim needs a high activity score. |
 | 4 | Sentences without an interest match name the Circle's topic. |
 | 5 | Keep httpx for the test client, and filter one deprecation warning. |
+| 6 | The root URL redirects to the interactive docs. |
 
 ---
 
@@ -52,3 +53,10 @@ Decisions made while building the recommender, with the evidence behind each. [p
 
 **Decision.** Keep httpx and filter that one warning in pytest.ini, with a comment pointing here. Switching packages is worth revisiting at the next dependency upgrade, once the replacement can be evaluated.
 
+### 6. The root URL redirects to the interactive docs
+
+**Context.** When the server starts, uvicorn prints http://127.0.0.1:8000. The app had no route at that address.
+
+**Evidence.** Opening the printed address returned `{"detail":"Not Found"}`, even though the server was healthy. A reviewer following the obvious link would conclude the app was broken.
+
+**Decision.** `GET /` redirects to `/docs`, and the redirect stays out of the API schema. An API test and the live smoke test both check it, and the README's quick start tells reviewers to open the docs page directly.

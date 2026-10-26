@@ -22,6 +22,14 @@ def test_a1_health_and_docs(client):
     assert client.get("/docs").status_code == 200
 
 
+def test_a1_the_root_url_redirects_to_the_docs(client):
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/docs"
+    assert client.get("/").status_code == 200  # following it lands on the docs page
+    assert "/" not in client.get("/openapi.json").json()["paths"]  # kept out of the API schema
+
+
 def test_a2_response_matches_the_contract(client):
     response = client.get("/users/7/recommendations")
     assert response.status_code == 200
